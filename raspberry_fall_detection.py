@@ -138,6 +138,8 @@ class FallDetectionSystem:
     
     async def handle_fall_detection(self):
         """Maneja la detección de una caída"""
+        global USUARIO_ID, WEBHOOK_URL
+        
         self.fall_count += 1
         timestamp = datetime.now().isoformat()
         
@@ -313,6 +315,9 @@ class FallDetectionSystem:
 async def main():
     import argparse
     
+    # Declarar global antes de usar
+    global USUARIO_ID
+    
     parser = argparse.ArgumentParser(description="Sistema de detección de caídas BLE")
     parser.add_argument("--ws-url", default=WS_URL, help="URL del servidor WebSocket")
     parser.add_argument("--device-name", default=DEVICE_NAME, help="Nombre del dispositivo BLE")
@@ -321,7 +326,6 @@ async def main():
     args = parser.parse_args()
     
     # Actualizar configuración global
-    global USUARIO_ID
     USUARIO_ID = args.user_id
     
     system = FallDetectionSystem(
