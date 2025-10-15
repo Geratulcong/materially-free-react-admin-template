@@ -125,16 +125,145 @@ class FallDetectionSystem:
             msg = data.decode().strip()
             logger.info(f"Notificación BLE recibida: {msg}")
             
-            if msg == "CAIDA":
+            # Intentar parsear como JSON primero
+            if msg.startswith('{'):
+                try:
+                    json_data = json.loads(msg)
+                    await self.process_json_message(json_data)
+                except json.JSONDecodeError:
+                    logger.warning(f"JSON inválido recibido: {msg}")
+            elif msg == "CAIDA":
                 await self.handle_fall_detection()
-            elif msg == "OK":
+            elif msg == "OK" or msg == "CONNECTED":
                 logger.info("Arduino conectado y funcionando")
                 await self.send_status_update("connected")
+            elif msg == "INIT":
+                logger.info("Arduino inicializando...")
             else:
                 logger.info(f"Mensaje desconocido: {msg}")
                 
         except Exception as e:
             logger.error(f"Error procesando notificación BLE: {e}")
+    
+    async def process_json_message(self, json_data):
+        """Procesa mensajes JSON del Arduino (formato compacto)"""
+        try:
+            msg_type = json_data.get('t') or json_data.get('type')  # Soportar ambos formatos
+            
+            if msg_type == "FALL" or msg_type == "FALL_ALERT":
+                # Procesar alerta de caída con datos detallados
+                severity = json_data.get('sev', json_data.get('severity', 'medium'))
+                magnitude = json_data.get('mag', json_data.get('magnitude', 0))
+                fall_count = json_data.get('fc', json_data.get('fall_count', 0))
+                timestamp = json_data.get('ts', json_data.get('timestamp', 0))
+                
+                # Datos de aceleración
+                acc_data = json_data.get('acc', [0, 0, 0])  # formato compacto [x,y,z]
+                if not acc_data and 'acceleration' in json_data:
+                    # formato extendido
+                    acc = json_data['acceleration']
+                    acc_data = [acc.get('x', 0), acc.get('y', 0), acc.get('z', 0)]
+                
+                # Datos ambientales
+                env_data = json_data.get('env', [])  # formato compacto [temp, hum, press]
+                if not env_data and 'environment' in json_data:
+                    # formato extendido
+                    env = json_data['environment']
+                    env_data = [env.get('temperature', 0), env.get('humidity', 0), env.get('pressure', 0)]
+                
+                await self.handle_detailed_fall(severity, magnitude, fall_count, timestamp, acc_data, env_data)
+                
+            elif msg_type == "STATUS":
+                # Procesar datos de estado del sistema
+                system_active = json_data.get('sa', json_data.get('system_active', True))
+                fall_count = json_data.get('fc', json_data.get('fall_count', 0))
+                baseline = json_data.get('bl', json_data.get('baseline', 1.0))
+                current_accel = json_data.get('ca', json_data.get('current_accel', 1.0))
+                timestamp = json_data.get('ts', json_data.get('timestamp', 0))
+                
+                # Datos ambientales
+                env_data = json_data.get('env', [])
+                if not env_data and 'environment' in json_data:
+                    env = json_data['environment']
+                    env_data = [env.get('temperature', 0), env.get('humidity', 0), env.get('pressure', 0)]
+                
+                await self.handle_status_update(system_active, fall_count, baseline, current_accel, timestamp, env_data)
+                
+        except Exception as e:
+            logger.error(f"Error procesando mensaje JSON: {e}")
+    
+    async def handle_detailed_fall(self, severity, magnitude, fall_count, timestamp, acc_data, env_data):
+        """Maneja detección de caída con datos detallados"""
+        global USUARIO_ID
+        
+        self.fall_count = fall_count
+        current_time = datetime.now().isoformat()
+        
+        logger.warning(f"¡CAÍDA DETECTADA! Severidad: {severity}, Magnitud: {magnitude}")
+        
+        # Crear datos detallados de la alerta
+        fall_alert = {
+            "type": "fall_alert",
+            "timestamp": current_time,
+            "arduino_timestamp": timestamp,
+            "alert_id": f"fall_{fall_count}_{int(time.time())}",
+            "severity": severity,
+            "magnitude": magnitude,
+            "location": "Sensor BLE",
+            "user_id": USUARIO_ID,
+            "fall_count": fall_count,
+            "device_status": "active",
+            "sensor_data": {
+                "acceleration": {
+                    "x": acc_data[0] if len(acc_data) > 0 else 0,
+                    "y": acc_data[1] if len(acc_data) > 1 else 0,
+                    "z": acc_data[2] if len(acc_data) > 2 else 0
+                },
+                "environment": {
+                    "temperature": env_data[0] if len(env_data) > 0 else None,
+                    "humidity": env_data[1] if len(env_data) > 1 else None,
+                    "pressure": env_data[2] if len(env_data) > 2 else None
+                } if env_data else None
+            }
+        }
+        
+        # Enviar al WebSocket
+        if self.ws_connected and self.ws:
+            try:
+                self.ws.send(json.dumps(fall_alert))
+                logger.info("Alerta detallada enviada al dashboard")
+            except Exception as e:
+                logger.error(f"Error enviando alerta al WebSocket: {e}")
+    
+    async def handle_status_update(self, system_active, fall_count, baseline, current_accel, timestamp, env_data):
+        """Maneja actualizaciones de estado del sistema"""
+        global USUARIO_ID
+        
+        status_data = {
+            "type": "system_status",
+            "timestamp": datetime.now().isoformat(),
+            "arduino_timestamp": timestamp,
+            "user_id": USUARIO_ID,
+            "system_active": bool(system_active),
+            "fall_count": fall_count,
+            "baseline_acceleration": baseline,
+            "current_acceleration": current_accel,
+            "sensor_data": {
+                "environment": {
+                    "temperature": env_data[0] if len(env_data) > 0 and env_data[0] != -999 else None,
+                    "humidity": env_data[1] if len(env_data) > 1 and env_data[1] != -999 else None,
+                    "pressure": env_data[2] if len(env_data) > 2 and env_data[2] != -999 else None
+                } if env_data else None
+            }
+        }
+        
+        # Enviar al WebSocket
+        if self.ws_connected and self.ws:
+            try:
+                self.ws.send(json.dumps(status_data))
+                logger.info(f"Estado del sistema enviado - Temp: {env_data[0] if env_data else 'N/A'}°C")
+            except Exception as e:
+                logger.error(f"Error enviando estado al WebSocket: {e}")
     
     async def handle_fall_detection(self):
         """Maneja la detección de una caída"""

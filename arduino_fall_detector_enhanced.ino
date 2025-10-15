@@ -36,7 +36,7 @@ BLEService uartService("6E400001-B5A3-F393-E0A9-E50E24DCCA9E");
 BLECharacteristic txChar(
   "6E400003-B5A3-F393-E0A9-E50E24DCCA9E",
   BLENotify, 
-  100  // Aumentamos el tamaño para enviar más datos
+  200  // Aumentamos el tamaño para mensajes más largos
 );
 
 // Configuración de detección de caídas
@@ -262,30 +262,17 @@ void checkForFall(unsigned long currentTime) {
 }
 
 void sendFallAlert(float magnitude, String severity) {
-  // Crear mensaje JSON con toda la información
+  // Crear mensaje JSON compacto para alerta de caída
   String message = "{";
-  message += "\"type\":\"FALL_ALERT\",";
-  message += "\"timestamp\":" + String(millis()) + ",";
-  message += "\"fall_count\":" + String(fallCount) + ",";
-  message += "\"severity\":\"" + severity + "\",";
-  message += "\"acceleration\":{";
-  message += "\"x\":" + String(ax, 3) + ",";
-  message += "\"y\":" + String(ay, 3) + ",";
-  message += "\"z\":" + String(az, 3) + ",";
-  message += "\"magnitude\":" + String(magnitude, 3);
-  message += "},";
-  message += "\"gyroscope\":{";
-  message += "\"x\":" + String(gx, 3) + ",";
-  message += "\"y\":" + String(gy, 3) + ",";
-  message += "\"z\":" + String(gz, 3);
-  message += "}";
+  message += "\"t\":\"FALL\","; // type abreviado
+  message += "\"ts\":" + String(millis()) + ","; // timestamp
+  message += "\"fc\":" + String(fallCount) + ","; // fall_count
+  message += "\"sev\":\"" + severity + "\","; // severity
+  message += "\"mag\":" + String(magnitude, 2) + ","; // magnitude
+  message += "\"acc\":[" + String(ax, 2) + "," + String(ay, 2) + "," + String(az, 2) + "]"; // acceleration array
   
   if (hasEnvironmentalSensors) {
-    message += ",\"environment\":{";
-    message += "\"temperature\":" + String(temperature, 2) + ",";
-    message += "\"humidity\":" + String(humidity, 2) + ",";
-    message += "\"pressure\":" + String(pressure, 2);
-    message += "}";
+    message += ",\"env\":[" + String(temperature, 1) + "," + String(humidity, 1) + "," + String(pressure, 1) + "]"; // environment array [temp, hum, press]
   }
   
   message += "}";
@@ -297,20 +284,17 @@ void sendFallAlert(float magnitude, String severity) {
 }
 
 void sendPeriodicData() {
+  // Crear mensaje de estado compacto
   String message = "{";
-  message += "\"type\":\"STATUS\",";
-  message += "\"timestamp\":" + String(millis()) + ",";
-  message += "\"system_active\":" + String(systemActive ? "true" : "false") + ",";
-  message += "\"fall_count\":" + String(fallCount) + ",";
-  message += "\"baseline\":" + String(accelBaseline, 3) + ",";
-  message += "\"current_accel\":" + String(sqrt(ax*ax + ay*ay + az*az), 3);
+  message += "\"t\":\"STATUS\","; // type
+  message += "\"ts\":" + String(millis()) + ","; // timestamp
+  message += "\"sa\":" + String(systemActive ? 1 : 0) + ","; // system_active (1/0 más corto que true/false)
+  message += "\"fc\":" + String(fallCount) + ","; // fall_count
+  message += "\"bl\":" + String(accelBaseline, 2) + ","; // baseline
+  message += "\"ca\":" + String(sqrt(ax*ax + ay*ay + az*az), 2); // current_accel
   
   if (hasEnvironmentalSensors) {
-    message += ",\"environment\":{";
-    message += "\"temperature\":" + String(temperature, 2) + ",";
-    message += "\"humidity\":" + String(humidity, 2) + ",";
-    message += "\"pressure\":" + String(pressure, 2);
-    message += "}";
+    message += ",\"env\":[" + String(temperature, 1) + "," + String(humidity, 1) + "," + String(pressure, 1) + "]"; // environment array
   }
   
   message += "}";
@@ -319,17 +303,18 @@ void sendPeriodicData() {
 }
 
 void sendMessage(String message) {
-  if (message.length() <= 100) {
+  if (message.length() <= 200) {
     txChar.writeValue(message.c_str());
+    Serial.print("Enviado: ");
+    Serial.println(message);
   } else {
     // Si el mensaje es muy largo, enviarlo en partes
     Serial.println("Advertencia: Mensaje muy largo, truncando");
-    String truncated = message.substring(0, 95) + "...}";
+    String truncated = message.substring(0, 195) + "...}";
     txChar.writeValue(truncated.c_str());
+    Serial.print("Enviado (truncado): ");
+    Serial.println(truncated);
   }
-  
-  Serial.print("Enviado: ");
-  Serial.println(message);
 }
 
 void updateStatusLED(unsigned long currentTime) {

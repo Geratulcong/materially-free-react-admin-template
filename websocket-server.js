@@ -1,11 +1,11 @@
-const WebSocket = require('ws');
-const http = require('http');
+import { WebSocketServer, WebSocket } from 'ws';
+import { createServer } from 'http';
 
 // Crear servidor HTTP
-const server = http.createServer();
+const server = createServer();
 
 // Crear servidor WebSocket
-const wss = new WebSocket.Server({ server });
+const wss = new WebSocketServer({ server });
 
 // Almacenar conexiones de clientes React
 const reactClients = new Set();

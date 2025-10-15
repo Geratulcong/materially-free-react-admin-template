@@ -1,9 +1,10 @@
 // assets
-import { DashboardOutlined } from '@ant-design/icons';
+import { Dashboard, NotificationImportant } from '@mui/icons-material';
 
 // icons
 const icons = {
-  DashboardOutlined
+  Dashboard,
+  NotificationImportant
 };
 
 // ==============================|| MENU ITEMS - SENSORS ||============================== //
@@ -18,7 +19,7 @@ const sensors = {
       title: 'Monitor BLE Sense 33',
       type: 'item',
       url: '/sensors/dashboard',
-      icon: icons.DashboardOutlined,
+      icon: icons.Dashboard,
       breadcrumbs: false
     },
     {
@@ -26,7 +27,7 @@ const sensors = {
       title: 'Alertas de Caída',
       type: 'item',
       url: '/sensors/fall-alerts',
-      icon: icons.DashboardOutlined,
+      icon: icons.NotificationImportant,
       breadcrumbs: false
     }
   ]
