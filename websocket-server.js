@@ -1,5 +1,9 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import { createServer } from 'http';
+import fetch from 'node-fetch';
+
+// Configuración
+const API_BASE_URL = 'http://localhost/api'; // Cambiar según tu configuración de XAMPP
 
 // Crear servidor HTTP
 const server = createServer();
@@ -21,7 +25,7 @@ wss.on('connection', (ws, req) => {
     console.log('Nueva conexión WebSocket');
     
     // Manejar mensajes
-    ws.on('message', (message) => {
+    ws.on('message', async (message) => {
         try {
             const data = JSON.parse(message.toString());
             console.log('Mensaje recibido:', data);
@@ -66,6 +70,9 @@ wss.on('connection', (ws, req) => {
             else if (data.type === 'sensor_data') {
                 console.log('Datos del sensor recibidos:', data);
                 
+                // Guardar en base de datos
+                await saveSensorDataToDB(data);
+                
                 // Retransmitir a todos los clientes React
                 reactClients.forEach(client => {
                     if (client.readyState === WebSocket.OPEN) {
@@ -80,6 +87,9 @@ wss.on('connection', (ws, req) => {
             // Si es una alerta de caída
             else if (data.type === 'fall_alert') {
                 console.log('🚨 ALERTA DE CAÍDA:', data);
+                
+                // Guardar en base de datos
+                await saveFallAlertToDB(data);
                 
                 // Agregar al historial
                 const alert = {
@@ -103,6 +113,9 @@ wss.on('connection', (ws, req) => {
             // Si es actualización de estado del sistema
             else if (data.type === 'system_status') {
                 console.log('Estado del sistema:', data);
+                
+                // Guardar en base de datos
+                await saveSensorDataToDB(data);
                 
                 // Retransmitir a todos los clientes React
                 reactClients.forEach(client => {
@@ -176,6 +189,94 @@ server.listen(PORT, () => {
     console.log(`Clientes React: ws://localhost:${PORT}`);
     console.log(`Raspberry Pi: ws://localhost:${PORT}`);
 });
+
+// =====================================================
+// Funciones para guardar datos en base de datos
+// =====================================================
+
+async function saveSensorDataToDB(data) {
+    try {
+        const response = await fetch(`${API_BASE_URL}/sensor-data`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                device_id: data.device_name || data.device_id || 'unknown',
+                user_id: data.user_id || 'default_user',
+                timestamp: data.timestamp || new Date().toISOString(),
+                arduino_timestamp: data.arduino_timestamp,
+                sensor_data: data.sensor_data || {},
+                baseline_acceleration: data.baseline_acceleration,
+                current_acceleration: data.current_acceleration,
+                system_active: data.system_active !== undefined ? data.system_active : true,
+                fall_count: data.fall_count || 0,
+                data_source: data.platform === 'Windows' ? 'simulator' : 'arduino'
+            })
+        });
+
+        if (response.ok) {
+            const result = await response.json();
+            console.log('✅ Datos de sensor guardados en BD:', result.data.id);
+        } else {
+            console.error('❌ Error guardando datos de sensor:', response.status, await response.text());
+        }
+    } catch (error) {
+        console.error('❌ Error conectando con API para datos de sensor:', error.message);
+    }
+}
+
+async function saveFallAlertToDB(data) {
+    try {
+        const response = await fetch(`${API_BASE_URL}/fall-alert`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                alert_id: data.alert_id || `fall_${Date.now()}`,
+                device_id: data.device_name || data.device_id || 'unknown',
+                user_id: data.user_id || 'default_user',
+                timestamp: data.timestamp || new Date().toISOString(),
+                arduino_timestamp: data.arduino_timestamp,
+                severity: data.severity || 'medium',
+                magnitude: data.magnitude,
+                confidence_score: data.confidence_score || 0.85,
+                sensor_data: data.sensor_data || {},
+                data_source: data.platform === 'Windows' ? 'simulator' : 'arduino'
+            })
+        });
+
+        if (response.ok) {
+            const result = await response.json();
+            console.log('🚨 Alerta de caída guardada en BD:', result.data.alert_id);
+        } else {
+            console.error('❌ Error guardando alerta de caída:', response.status, await response.text());
+        }
+    } catch (error) {
+        console.error('❌ Error conectando con API para alerta de caída:', error.message);
+    }
+}
+
+// Función para obtener estadísticas de la base de datos
+async function getDBStats() {
+    try {
+        const response = await fetch(`${API_BASE_URL}/stats?days=1`);
+        if (response.ok) {
+            const stats = await response.json();
+            console.log('📊 Estadísticas de BD (últimas 24h):', stats.data);
+            return stats.data;
+        }
+    } catch (error) {
+        console.error('❌ Error obteniendo estadísticas:', error.message);
+    }
+    return null;
+}
+
+// Mostrar estadísticas cada 10 minutos
+setInterval(async () => {
+    await getDBStats();
+}, 10 * 60 * 1000);
 
 // Manejar cierre graceful
 process.on('SIGINT', () => {

@@ -40,7 +40,7 @@ import {
 import useWebSocket from '../../hooks/useWebSocket';
 
 const FallAlertDashboard = () => {
-    const { isConnected, connectionStatus, error } = useWebSocket();
+    const { isConnected, sensorData, connectionStatus, error } = useWebSocket();
     const [alerts, setAlerts] = useState([]);
     const [systemStatus, setSystemStatus] = useState({
         ble_status: 'unknown',
@@ -51,51 +51,26 @@ const FallAlertDashboard = () => {
     const [dialogOpen, setDialogOpen] = useState(false);
     const [unreadAlerts, setUnreadAlerts] = useState(0);
 
-    // Configurar WebSocket personalizado para alertas
+    // Procesar datos del WebSocket para alertas de caída y estado del sistema
     useEffect(() => {
-        if (!isConnected) return;
-
-        const ws = new WebSocket('ws://localhost:8080');
-
-        ws.onopen = () => {
-            console.log('Conectado a WebSocket para alertas');
-            ws.send(JSON.stringify({
-                type: 'identify',
-                client: 'react'
-            }));
-        };
-
-        ws.onmessage = (event) => {
-            try {
-                const data = JSON.parse(event.data);
-                console.log('Mensaje recibido:', data);
-
-                if (data.type === 'fall_alert') {
-                    handleNewAlert(data);
-                } else if (data.type === 'system_status') {
-                    setSystemStatus({
-                        ble_status: data.ble_status || 'unknown',
-                        device_name: data.device_name || 'N/A',
-                        fall_count: data.fall_count || 0
-                    });
-                } else if (data.type === 'alert_history') {
-                    setAlerts(data.alerts || []);
-                }
-            } catch (error) {
-                console.error('Error procesando mensaje:', error);
+        if (sensorData) {
+            console.log('FallAlertDashboard - Datos recibidos:', sensorData);
+            
+            if (sensorData.type === 'fall_alert') {
+                handleNewAlert(sensorData);
+            } else if (sensorData.type === 'sensor_data') {
+                // Actualizar estado del sistema con datos de sensores
+                setSystemStatus(prev => ({
+                    ...prev,
+                    ble_status: isConnected ? 'connected' : 'disconnected',
+                    device_name: 'Nano33BLE-FallDetector',
+                    fall_count: sensorData.fall_count || prev.fall_count,
+                    system_active: sensorData.system_active,
+                    last_update: new Date().toISOString()
+                }));
             }
-        };
-
-        ws.onclose = () => {
-            console.log('Conexión WebSocket cerrada');
-        };
-
-        return () => {
-            if (ws.readyState === WebSocket.OPEN) {
-                ws.close();
-            }
-        };
-    }, [isConnected]);
+        }
+    }, [sensorData, isConnected]);
 
     const handleNewAlert = (alert) => {
         setAlerts(prev => {

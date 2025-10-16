@@ -34,16 +34,83 @@ const useWebSocket = (url = 'ws://localhost:8080') => {
                     const data = JSON.parse(event.data);
                     console.log('Datos recibidos:', data);
                     
+                    // Procesar mensajes del formato antiguo
                     if (data.type === 'sensor_data') {
                         setSensorData({
                             ...data,
                             receivedAt: new Date().toISOString()
                         });
-                    } else if (data.type === 'connection') {
+                    } 
+                    // Procesar mensajes del formato compacto del Arduino
+                    else if (data.t === 'STATUS' || data.type === 'system_status') {
+                        // Convertir formato compacto a formato extendido
+                        const processedData = {
+                            type: 'sensor_data',
+                            timestamp: data.ts || data.timestamp || Date.now(),
+                            system_active: data.sa !== undefined ? Boolean(data.sa) : data.system_active,
+                            fall_count: data.fc || data.fall_count || 0,
+                            baseline: data.bl || data.baseline_acceleration || 1.0,
+                            current_accel: data.ca || data.current_acceleration || 1.0,
+                            receivedAt: new Date().toISOString()
+                        };
+                        
+                        // Procesar datos ambientales
+                        if (data.env && Array.isArray(data.env) && data.env.length >= 3) {
+                            // Formato compacto: [temp, hum, press]
+                            processedData.temperature = data.env[0] !== -999 ? data.env[0] : null;
+                            processedData.humidity = data.env[1] !== -999 ? data.env[1] : null;
+                            processedData.pressure = data.env[2] !== -999 ? data.env[2] : null;
+                        } else if (data.sensor_data?.environment) {
+                            // Formato extendido de Python
+                            const env = data.sensor_data.environment;
+                            processedData.temperature = env.temperature;
+                            processedData.humidity = env.humidity;
+                            processedData.pressure = env.pressure;
+                        }
+                        
+                        setSensorData(processedData);
+                    }
+                    // Procesar alertas de caída
+                    else if (data.t === 'FALL' || data.type === 'fall_alert') {
+                        const fallData = {
+                            type: 'fall_alert',
+                            timestamp: data.ts || data.timestamp || Date.now(),
+                            fall_count: data.fc || data.fall_count || 0,
+                            severity: data.sev || data.severity || 'medium',
+                            magnitude: data.mag || data.magnitude || 0,
+                            receivedAt: new Date().toISOString()
+                        };
+                        
+                        // Procesar datos de aceleración
+                        if (data.acc && Array.isArray(data.acc) && data.acc.length >= 3) {
+                            fallData.acceleration = {
+                                x: data.acc[0],
+                                y: data.acc[1],
+                                z: data.acc[2]
+                            };
+                        } else if (data.sensor_data?.acceleration) {
+                            fallData.acceleration = data.sensor_data.acceleration;
+                        }
+                        
+                        // Procesar datos ambientales
+                        if (data.env && Array.isArray(data.env) && data.env.length >= 3) {
+                            fallData.temperature = data.env[0] !== -999 ? data.env[0] : null;
+                            fallData.humidity = data.env[1] !== -999 ? data.env[1] : null;
+                            fallData.pressure = data.env[2] !== -999 ? data.env[2] : null;
+                        } else if (data.sensor_data?.environment) {
+                            const env = data.sensor_data.environment;
+                            fallData.temperature = env.temperature;
+                            fallData.humidity = env.humidity;
+                            fallData.pressure = env.pressure;
+                        }
+                        
+                        setSensorData(fallData);
+                    }
+                    else if (data.type === 'connection') {
                         setConnectionStatus(data.message);
                     }
                 } catch (error) {
-                    console.error('Error parseando mensaje WebSocket:', error);
+                    console.error('Error parseando mensaje WebSocket:', error, 'Datos recibidos:', event.data);
                     setError('Error procesando datos del servidor');
                 }
             };

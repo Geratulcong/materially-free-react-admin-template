@@ -22,6 +22,7 @@
     "@vitejs/plugin-react": "4.4.1",
     "apexcharts": "4.7.0",
     "lodash-es": "4.17.21",
+    "node-fetch": "^3.3.2",
     "react": "19.1.0",
     "react-apexcharts": "1.7.0",
     "react-device-detect": "2.2.3",

@@ -1,0 +1,16 @@
+RewriteEngine On
+
+# Habilitar CORS
+Header always set Access-Control-Allow-Origin "*"
+Header always set Access-Control-Allow-Methods "GET, POST, OPTIONS, DELETE, PUT"
+Header always set Access-Control-Allow-Headers "Content-Type, Authorization, X-Requested-With"
+
+# Redirigir todas las requests a index.php
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(.*)$ index.php [QSA,L]
+
+# Configurar tipos MIME
+<IfModule mod_mime.c>
+    AddType application/json .json
+</IfModule>
